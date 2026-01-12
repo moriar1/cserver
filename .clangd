@@ -1,0 +1,35 @@
+Index:
+  Background: Build
+  # StandardLibrary: true
+
+# CompileFlags:
+#   Add: [-Werror=incompatible-pointer-types, -std=c17, -Wall, -Wextra, -D_CLANGD=1, -I./include, -I/usr/local/include]
+
+## Uncomment if .clnag-tidy file do not adds those checks
+# Diagnostics:
+#   UnusedIncludes: Strict
+#   ClangTidy:
+#     Add:
+#       - '*'
+#     Remove:
+#       - llvmlibc-*
+#       - clang-diagnostic-missing-include-dirs
+#       - fuchsia-trailing-return
+#       - altera-struct-pack-align
+#       - cppcoreguidelines-avoid-magic-numbers
+#       - readability-magic-numbers
+#       - cppcoreguidelines-init-variables
+#       - readability-identifier-length
+#       - bugprone-assignment-in-if-condition
+#       - cert-err33-c
+#       - altera-unroll-loops
+#       - readability-isolate-declaration
+#       - bugprone-easily-swappable-parameters
+#       - concurrency-mt-unsafe
+#       - google-readability-todo
+#       - cppcoreguidelines-avoid-non-const-global-variables
+#       - android-cloexec-open
+#       - android-cloexec-accept
+#       - readability-function-cognitive-complexity
+#       - clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+## Add: [modernize*, bugprone*, performance*, readability-*]

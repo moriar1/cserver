@@ -1,0 +1,26 @@
+# InheritParentConfig: true
+Checks:
+  - '*'
+  - -llvmlibc-*
+  - -clang-diagnostic-missing-include-dirs
+  - -fuchsia-trailing-return
+  - -altera-struct-pack-align
+  - -cppcoreguidelines-avoid-magic-numbers
+  - -readability-magic-numbers
+  - -cppcoreguidelines-init-variables
+  - -readability-identifier-length
+  - -bugprone-assignment-in-if-condition
+  - -cert-err33-c
+  - -altera-unroll-loops
+  - -readability-isolate-declaration
+  - -bugprone-easily-swappable-parameters
+  - -concurrency-mt-unsafe
+  - -google-readability-todo
+  - -cppcoreguidelines-avoid-non-const-global-variables
+  - -android-cloexec-open
+  - -android-cloexec-accept
+  - -readability-function-cognitive-complexity
+UseColor: true
+# WarningsAsErrors: ''
+# HeaderFilterRegex: ''
+# FormatStyle: file
