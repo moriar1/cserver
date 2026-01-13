@@ -117,8 +117,22 @@ int main(void /* int argc, char *argv[] */) {
     pid_t pid = fork();
     if (pid == 0) {  // child
       close(sockfd); // close listener for child
-      if (send(new_fd, "Hello, world!", 13, 0) == -1) {
-        warn("send");
+
+      long numbytes = 0;
+      char buf[MAXDATASIZE];
+      while (1) {
+        numbytes = recv(new_fd, buf, sizeof buf, 0);
+        if (numbytes > 0) {
+          if (send(new_fd, buf, (size_t)numbytes, 0) == -1) {
+            warn("send");
+          }
+          printf("server: echoed to %s\n", s);
+        } else if (numbytes == 0) {
+          printf("server: %s disconnected\n", s);
+          break;
+        } else {
+          err(6, "recv");
+        }
       }
       close(new_fd);
       exit(0);
