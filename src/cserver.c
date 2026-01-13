@@ -1,28 +1,23 @@
+#include "threadpool.h"
 #include <arpa/inet.h>
 #include <err.h>
-#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #define PROJECT_NAME "cserver"
 #define PORT "3490"
 #define BACKLOG 10 // how many pending connections queue will hold
 #define MAXDATASIZE 4096
+enum { NUM_THREADS = 6 };
 
-static void sigchld_handler(int __attribute__((unused)) s) {
-  int saved_errno = errno;
-  while (waitpid(-1, NULL, WNOHANG) > 0) { // TODO
-  }
-
-  errno = saved_errno;
-}
+typedef struct {
+  int client_fd;
+} NetoworkTask;
 
 static void *get_in_addr(struct sockaddr *sa) {
   if (sa->sa_family == AF_INET) {
@@ -30,6 +25,29 @@ static void *get_in_addr(struct sockaddr *sa) {
   }
 
   return &(((struct sockaddr_in6 *)sa)->sin6_addr);
+}
+
+static void netoworktask_echo(void *arg) {
+  NetoworkTask *args = arg;
+  long numbytes = 0;
+  char buf[MAXDATASIZE];
+  while (1) {
+    numbytes = recv(args->client_fd, buf, sizeof buf, 0);
+    if (numbytes > 0) {
+      if (send(args->client_fd, buf, (size_t)numbytes, 0) == -1) {
+        warn("send");
+      }
+    } else if (numbytes == 0) {
+      // printf("server: %s disconnected\n", s);
+      break;
+    } else {
+      warn("recv");
+      break;
+    }
+  }
+  printf("server: closing connection...\n");
+  close(args->client_fd);
+  free(arg);
 }
 
 int main(void /* int argc, char *argv[] */) {
@@ -90,12 +108,9 @@ int main(void /* int argc, char *argv[] */) {
     err(4, "listen");
   }
 
-  struct sigaction sa;
-  sa.sa_handler = sigchld_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESTART;
-  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-    err(5, "sigaction");
+  ThreadPool *thread_pool = threadpool_init(NUM_THREADS);
+  if (thread_pool == NULL) {
+    err(7, "thread_pool is NULL");
   }
 
   puts("server: waiting for connections...");
@@ -114,34 +129,9 @@ int main(void /* int argc, char *argv[] */) {
               s, sizeof s);
     printf("server: got connection from %s\n", s);
 
-    pid_t pid = fork();
-    if (pid == 0) {  // child
-      close(sockfd); // close listener for child
-
-      long numbytes = 0;
-      char buf[MAXDATASIZE];
-      while (1) {
-        numbytes = recv(new_fd, buf, sizeof buf, 0);
-        if (numbytes > 0) {
-          if (send(new_fd, buf, (size_t)numbytes, 0) == -1) {
-            warn("send");
-          }
-          printf("server: echoed to %s\n", s);
-        } else if (numbytes == 0) {
-          printf("server: %s disconnected\n", s);
-          break;
-        } else {
-          err(6, "recv");
-        }
-      }
-      close(new_fd);
-      exit(0);
-    }
-    // parent
-    else if (pid == -1) {
-      warn("fork");
-    }
-    close(new_fd); // close sender for parrent
+    NetoworkTask *task = malloc(sizeof(*task));
+    task->client_fd = new_fd;
+    threadpool_push(thread_pool, netoworktask_echo, task);
   }
   return 0;
 }

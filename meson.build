@@ -1,6 +1,6 @@
 project('cserver', 'c', version: '0.1', default_options: ['warning_level=3'])
-src = ['cserver.c']
-# incdir = include_directories('include')
+src = ['src/cserver.c', 'src/threadpool.c']
+incdir = include_directories('include')
 
 add_project_arguments(
     [
@@ -28,10 +28,18 @@ add_project_arguments(
     ],
     language: 'c',
 )
-# if host_machine.system() == 'linux'
-#     add_project_arguments(['-D_POSIX_C_SOURCE=200809L'], language: 'c')
-# endif
 
-# exe = executable('temp', src, include_directories: incdir, install: true)
-exe = executable('cserver', src, install: true)
+if host_machine.system() == 'linux'
+    add_project_arguments(['-D_POSIX_C_SOURCE=200809L'], language: 'c')
+endif
+
+thread_dep = dependency('threads')
+
+exe = executable(
+    'cserver',
+    src,
+    dependencies: thread_dep,
+    include_directories: incdir,
+    install: true,
+)
 test('basic', exe)
