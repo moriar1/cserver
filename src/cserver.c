@@ -9,7 +9,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define PROJECT_NAME "cserver"
 #define PORT "3490"
 #define BACKLOG 10 // how many pending connections queue will hold
 #define MAXDATASIZE 4096
@@ -81,7 +80,7 @@ int main(void /* int argc, char *argv[] */) {
     printf("server: binding to %s\n", ipstr);
 
     if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-      warn("server: socket");
+      warn("socket");
       continue;
     }
 
@@ -101,7 +100,7 @@ int main(void /* int argc, char *argv[] */) {
   freeaddrinfo(servinfo);
 
   if (p == NULL) {
-    err(3, "server: failed to bind");
+    err(3, "failed to bind");
   }
 
   if (listen(sockfd, BACKLOG) == -1) {
@@ -133,5 +132,6 @@ int main(void /* int argc, char *argv[] */) {
     task->client_fd = new_fd;
     threadpool_push(thread_pool, netoworktask_echo, task);
   }
-  return 0;
+  // TODO: exit on ctrl+C
+  // return 0;
 }

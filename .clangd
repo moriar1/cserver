@@ -2,7 +2,8 @@ Index:
   Background: Build
   # StandardLibrary: true
 
-# CompileFlags:
+CompileFlags:
+  Add: [-Wno-implicit-void-ptr-cast]
 #   Add: [-Werror=incompatible-pointer-types, -std=c17, -Wall, -Wextra, -D_CLANGD=1, -I./include, -I/usr/local/include]
 
 ## Uncomment if .clnag-tidy file do not adds those checks
