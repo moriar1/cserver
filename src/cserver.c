@@ -16,7 +16,7 @@ enum { NUM_THREADS = 6 };
 
 typedef struct {
   int client_fd;
-} NetoworkTask;
+} NetworkTask;
 
 static void *get_in_addr(struct sockaddr *sa) {
   if (sa->sa_family == AF_INET) {
@@ -27,7 +27,7 @@ static void *get_in_addr(struct sockaddr *sa) {
 }
 
 static void netoworktask_echo(void *arg) {
-  NetoworkTask *args = arg;
+  NetworkTask *args = arg;
   long numbytes = 0;
   char buf[MAXDATASIZE];
   while (1) {
@@ -128,7 +128,7 @@ int main(void /* int argc, char *argv[] */) {
               s, sizeof s);
     printf("server: got connection from %s\n", s);
 
-    NetoworkTask *task = malloc(sizeof(*task));
+    NetworkTask *task = malloc(sizeof(*task));
     task->client_fd = new_fd;
     threadpool_push(thread_pool, netoworktask_echo, task);
   }

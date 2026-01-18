@@ -44,8 +44,8 @@ warnings_flags = [
 link_flags = [
     '-Wl,-z,relro',
     '-Wl,-z,now',
-    '-Wl,-z,defs',
     '-Wl,-z,noexecstack',
+    # '-Wl,-z,defs',
     # '-Wl,--no-copy-dt-needed-entries',
     # '-Wl,-z,nodlopen',
 ]
@@ -66,7 +66,8 @@ endif
 
 # ---- Compiler Specific Flags ----
 
-cc_id = meson.get_compiler('c').get_id()
+cc = meson.get_compiler('c')
+cc_id = cc.get_id()
 
 if cc_id == 'clang'
     warnings_flags += [
@@ -102,10 +103,15 @@ elif cc_id == 'gcc'
 endif
 
 add_project_arguments(
-    hardening_flags + warnings_flags + build_type_flags,
+    cc.get_supported_arguments(
+        hardening_flags + warnings_flags + build_type_flags,
+    ),
     language: 'c',
 )
-add_project_link_arguments(link_flags + build_type_link_flags, language: 'c')
+add_project_link_arguments(
+    cc.get_supported_link_arguments(link_flags + build_type_link_flags),
+    language: 'c',
+)
 
 # ---- Misc ----
 

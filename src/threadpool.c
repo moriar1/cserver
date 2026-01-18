@@ -65,7 +65,7 @@ ThreadPool *threadpool_init(unsigned nthreads) {
     // threads are dangling (fix it or use threads_count for succeed threads)
     if (pthread_detach(thread)) {
       DEBUG_PUTS("err: pdetatch");
-      goto cleanup_cond_wait;
+      goto cleanup_cond_wait; // TODO: try call shutdown in threadpool_destroy
     }
   }
 
