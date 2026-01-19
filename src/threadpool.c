@@ -34,11 +34,9 @@ struct ThreadPool {
 ThreadPool *threadpool_init(unsigned nthreads) {
   ThreadPool *pool = calloc(1, sizeof(*pool));
   if (!pool) {
-    DEBUG_PRINTF("%s: pool calloc fail %s", __PRETTY_FUNCTION__,
-                 strerror(errno));
+    DEBUG_PRINTF("%s: pool calloc fail %s", __func__, strerror(errno));
     return NULL;
   }
-  pool->alive_threads_count = nthreads;
 
   if (pthread_mutex_init(&pool->mutex, NULL) != 0) {
     DEBUG_PUTS("err: mutex_init");
@@ -52,26 +50,34 @@ ThreadPool *threadpool_init(unsigned nthreads) {
     DEBUG_PUTS("err: wait cond_init");
     goto cleanup_cond_pushed_task;
   }
+
   for (unsigned i = 0; i < nthreads; i++) {
     pthread_t thread;
     if (pthread_create(&thread, NULL, threadpool_thread_run, pool) != 0) {
       DEBUG_PUTS("err: pcreate");
-      goto cleanup_cond_wait;
+      goto cleanup_shutdown;
     }
-    // NOTE:
-    // Maybe no need in err checking
-    // Maybe detach is bad practise
-    // If some threads are allocated, but 1 thread got an error than some
-    // threads are dangling (fix it or use threads_count for succeed threads)
+    pool->alive_threads_count += 1;
+
+    // NOTE: Maybe no need in err checking
     if (pthread_detach(thread)) {
       DEBUG_PUTS("err: pdetatch");
-      goto cleanup_cond_wait; // TODO: try call shutdown in threadpool_destroy
+      goto cleanup_shutdown;
     }
   }
 
   return pool;
 
-cleanup_cond_wait:
+cleanup_shutdown:
+  pthread_mutex_lock(&pool->mutex);
+  pool->shutdown = true;
+  pthread_cond_broadcast(&pool->cond_task_available);
+  while (pool->alive_threads_count > 0) { // Waiting threads to finish
+    pthread_cond_wait(&pool->cond_wait, &pool->mutex);
+  }
+  pthread_mutex_unlock(&pool->mutex);
+
+  // cleanup_cond_wait:
   if (pthread_cond_destroy(&pool->cond_wait) != 0) {
     DEBUG_PUTS("err: wait cond_destroy");
   }
@@ -138,8 +144,7 @@ int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
   // TODO: use batch alloc
   Task *new_node = malloc(sizeof(*new_node));
   if (!new_node) {
-    DEBUG_PRINTF("%s: new_node malloc fail %s", __PRETTY_FUNCTION__,
-                 strerror(errno));
+    DEBUG_PRINTF("%s: new_node malloc fail %s", __func__, strerror(errno));
     return -1;
   }
   new_node->next = NULL;
@@ -155,9 +160,8 @@ int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
     pool->tail->next = new_node; // not empty queue
     pool->tail = new_node;
   }
-  // fprintf(stderr, "[ThreadPool] (push) tasks_count: %zu,
-  // working_threads_count: %zu\n", pool->tasks_count,
-  // pool->working_threads_count);
+  DEBUG_PRINTF("Task pushed. tasks_count: %zu, working_threads_count: %zu",
+               pool->tasks_count, pool->working_threads_count);
   pthread_cond_signal(&pool->cond_task_available);
   pthread_mutex_unlock(&pool->mutex);
   return 0;
@@ -199,7 +203,7 @@ void *threadpool_thread_run(void *arg) {
     }
     if (pool->shutdown && pool->head == NULL) {
       pool->alive_threads_count--; // `threadpool_wait()` waits for 0
-                                   // threads_count
+                                   // alive_threads_count
       if (pool->alive_threads_count == 0) {
         pthread_cond_broadcast(&pool->cond_wait);
       }
@@ -211,9 +215,8 @@ void *threadpool_thread_run(void *arg) {
     Task *task;
     threadpool_pop(pool, &task);
     pool->working_threads_count++;
-    // fprintf(stderr, "[ThreadPool] (pop) tasks_count: %zu,
-    // working_threads_count: %zu\n", pool->tasks_count,
-    // pool->working_threads_count);
+    DEBUG_PRINTF("Starting Task. tasks_count: %zu, working_threads_count: %zu",
+                 pool->tasks_count, pool->working_threads_count);
     pthread_mutex_unlock(&pool->mutex);
 
     // Execute task
