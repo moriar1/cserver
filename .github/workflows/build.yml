@@ -1,0 +1,22 @@
+name: CServer CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential meson ninja-build
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Meson
+        run: meson setup builddir --fatal-meson-warnings
+
+      - name: Build
+        run: meson compile -C builddir
