@@ -106,13 +106,6 @@ int threadpool_destroy(ThreadPool *pool) {
   pthread_mutex_unlock(&pool->mutex);
   threadpool_wait(pool);
 
-  // only for debug
-#ifndef NDEBUG
-  if (pool->head != NULL) {
-    DEBUG_PUTS("err: there were tasks in destroy");
-  }
-#endif
-
   if (pthread_mutex_destroy(&pool->mutex) != 0) {
     DEBUG_PUTS("err: mutex_destroy");
     goto err;
@@ -134,14 +127,12 @@ err:
 }
 
 // NOTE: may add check is queue is full (add queue_max_size and check it)
-// NOTE: arg maybe on heap (add destructor or free() in func)
 int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
   if (pool == NULL) {
     DEBUG_PUTS("threadpool is NULL, cannot push");
     return -1;
   }
 
-  // TODO: use batch alloc
   Task *new_node = malloc(sizeof(*new_node));
   if (!new_node) {
     DEBUG_PRINTF("%s: new_node malloc fail %s", __func__, strerror(errno));
@@ -245,8 +236,6 @@ void threadpool_wait(ThreadPool *pool) {
   }
 
   pthread_mutex_lock(&pool->mutex);
-  // TODO: try simplify: while (tasks_count>0 || working_threads>0) and shutdown
-  // in destroy
   while ((!pool->shutdown && pool->working_threads_count != 0) ||
          (pool->shutdown && pool->alive_threads_count != 0)) {
     pthread_cond_wait(&pool->cond_wait, &pool->mutex);

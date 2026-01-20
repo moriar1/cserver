@@ -49,7 +49,7 @@ static void netoworktask_echo(void *arg) {
   free(arg);
 }
 
-int main(void /* int argc, char *argv[] */) {
+int main(void) {
   struct addrinfo hints;
   struct addrinfo *servinfo;
 
@@ -132,6 +132,4 @@ int main(void /* int argc, char *argv[] */) {
     task->client_fd = new_fd;
     threadpool_push(thread_pool, netoworktask_echo, task);
   }
-  // TODO: exit on ctrl+C
-  // return 0;
 }
