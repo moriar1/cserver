@@ -129,6 +129,12 @@ int main(void) {
     printf("server: got connection from %s\n", s);
 
     NetworkTask *task = malloc(sizeof(*task));
+    if (task == NULL) {
+      close(new_fd);
+      warn("malloc");
+      continue;
+    }
+
     task->client_fd = new_fd;
     threadpool_push(thread_pool, netoworktask_echo, task);
   }
