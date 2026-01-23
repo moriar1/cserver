@@ -1,6 +1,6 @@
 # CServer
 
-Multi-threaded TCP server using custom thread pool and BSD sockets.
+Multi-threaded HTTP server using custom thread pool and BSD sockets.
 
 ## Building from Source
 
@@ -43,25 +43,16 @@ server: got connection from ::1
 
 ## Testing
 
-### Using Netcat
+### Using Web Browser
 
-Depending on the bind address, use `::1` (IPv6) or `127.0.0.1` (IPv4) as IP.
+Depending on the *bind* address, use `::1` (IPv6) or `127.0.0.1` (IPv4) as IP.
 
-```sh
-nc ::1 3490
-# Type 'hello' and press ENTER
-
-# Alternative
-nc 127.0.0.1 3490
-# Type 'hello' and press ENTER
-```
+Run `cserver` then open one of those links in your web browser: `http://[::1]:3490` or `http://127.0.0.1:3490`
 
 ### Using curl
 
 ```sh
-curl --http0.9 '[::1]:3490'
-curl --http0.9 '127.0.0.1:3490'
-# Echoes headers
+curl '[::1]:3490'
+curl '127.0.0.1:3490'
+# raw html output
 ```
-
-*You can also use your web browser: `http://[::1]:3490` or `http://127.0.0.1:3490`.*
