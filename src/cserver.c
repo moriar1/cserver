@@ -26,23 +26,110 @@ static void *get_in_addr(struct sockaddr *sa) {
   return &(((struct sockaddr_in6 *)sa)->sin6_addr);
 }
 
-static void netoworktask_echo(void *arg) {
+// NOTE: if error occured ptr is unchanged
+static long read_file(const char *file_path, char **ptr) {
+  // Open file
+  FILE *fp = fopen(file_path, "rb");
+  if (fp == NULL) {
+    warn("fopen `%s`", file_path);
+    return -1;
+  }
+
+  // Get filesize
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    warn("fseek end `%s`", file_path);
+    fclose(fp);
+    return -1;
+  }
+  long size = ftell(fp);
+  if (size < 0) {
+    warn("ftell `%s`", file_path);
+    fclose(fp);
+    return -1;
+  }
+  if (size == 0) {
+    // warnx("file `%s` is empty", file_path);
+    *ptr = NULL;
+    fclose(fp);
+    return 0;
+  }
+  if (fseek(fp, 0L, SEEK_SET) != 0) {
+    warn("fseek set `%s`", file_path);
+    fclose(fp);
+    return -1;
+  }
+
+  // read file
+  char *buf = malloc(size);
+  if (buf == NULL) {
+    warn("malloc `%s`", file_path);
+    fclose(fp);
+    return -1;
+  }
+  if (fread(buf, size, 1, fp) != 1) {
+    fclose(fp);
+    free(buf);
+    warn("fread `%s`", file_path);
+    return -1;
+  }
+
+  // Return buffer and its size
+  *ptr = buf;
+  fclose(fp);
+  return size;
+}
+
+static void networktask_send_html(void *arg) {
   NetworkTask *args = arg;
   long numbytes = 0;
-  char buf[MAXDATASIZE];
-  while (1) {
-    numbytes = recv(args->client_fd, buf, sizeof buf, 0);
-    if (numbytes > 0) {
-      if (send(args->client_fd, buf, (size_t)numbytes, 0) == -1) {
+  char recv_buf[MAXDATASIZE];
+  char send_headers[MAXDATASIZE];
+
+  numbytes = recv(args->client_fd, recv_buf, MAXDATASIZE - 1, 0);
+  if (numbytes > 0) {
+    recv_buf[numbytes] = 0; // for strncmp
+
+    if (strncmp(recv_buf, "GET", 3) == 0) {
+      char *content = NULL;
+      long content_lenght = read_file("index.html", &content);
+
+      if (content_lenght < 0) {
+        // Failed reading file => 404
+        long sz =
+            snprintf(send_headers, sizeof(send_headers),
+                     "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
+
+        if (send(args->client_fd, send_headers, sz, 0) == -1) {
+          warn("send");
+        }
+        warnx("failed to read content");
+      } else {
+        // OK => 200
+        long sz = snprintf(send_headers, sizeof(send_headers),
+                           "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",
+                           content_lenght);
+
+        if (send(args->client_fd, send_headers, sz, 0) == -1) {
+          warn("send");
+        }
+        if (send(args->client_fd, content, content_lenght, 0) == -1) {
+          warn("send");
+        }
+        free(content);
+      }
+    } else {
+      // If not GET request => 404
+      long sz = snprintf(send_headers, sizeof(send_headers),
+                         "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
+
+      if (send(args->client_fd, send_headers, sz, 0) == -1) {
         warn("send");
       }
-    } else if (numbytes == 0) {
-      // printf("server: %s disconnected\n", s);
-      break;
-    } else {
-      warn("recv");
-      break;
     }
+  } else if (numbytes == 0) {
+    puts("server: disconnected by client");
+  } else {
+    warn("recv");
   }
   printf("server: closing connection...\n");
   close(args->client_fd);
@@ -136,6 +223,6 @@ int main(void) {
     }
 
     task->client_fd = new_fd;
-    threadpool_push(thread_pool, netoworktask_echo, task);
+    threadpool_push(thread_pool, networktask_send_html, task);
   }
 }

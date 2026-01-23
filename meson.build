@@ -39,6 +39,7 @@ warnings_flags = [
     '-Wstrict-overflow=5',
     '-Werror=format-security',
     '-Werror=incompatible-pointer-types',
+    '-Wno-sign-conversion',
 ]
 
 link_flags = [
