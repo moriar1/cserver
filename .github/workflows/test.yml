@@ -20,3 +20,19 @@ jobs:
 
       - name: Build
         run: meson compile -C builddir
+
+      - name: Run server
+        run: ./builddir/cserver &
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install test dependencies
+        run: pip install requests
+
+      - name: Run test
+        run: python test.py
+
+      - name: Shut down
+        run: killall cserver
