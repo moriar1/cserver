@@ -9,9 +9,11 @@
 #include <unistd.h>
 
 #define PORT "3490"
-#define BACKLOG 10 // how many pending connections queue will hold
-#define MAXDATASIZE 4096
-enum { NUM_THREADS = 6 };
+enum {
+  NUM_THREADS = 6,
+  MAXDATASIZE = 4096,
+  BACKLOG = 10, // How many pending connections queue will hold
+};
 
 typedef struct {
   int client_fd;
