@@ -1,17 +1,8 @@
-#include "custom.h" // DEBUG_PUTS, DEBUG_PRINTF
+#include "customlog.h" // LOG_DEBUG
 #include "threadpool.h"
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// In case if "custom.h" isn't #included
-#ifndef DEBUG_PRINTF
-#define DEBUG_PRINTF(fmt, ...) ((void)0)
-#endif
-#ifndef DEBUG_PUTS
-#define DEBUG_PUTS(msg) ((void)0)
-#endif
 
 struct Task {
   void *arg;
@@ -34,34 +25,34 @@ struct ThreadPool {
 ThreadPool *threadpool_init(unsigned nthreads) {
   ThreadPool *pool = calloc(1, sizeof(*pool));
   if (!pool) {
-    DEBUG_PRINTF("%s: pool calloc fail %s", __func__, strerror(errno));
+    LOG_DEBUG_ERRNO("err: pool calloc fail");
     return NULL;
   }
 
   if (pthread_mutex_init(&pool->mutex, NULL) != 0) {
-    DEBUG_PUTS("err: mutex_init");
+    LOG_DEBUG("err: mutex_init");
     goto cleanup_pool;
   }
   if (pthread_cond_init(&pool->cond_task_available, NULL) != 0) {
-    DEBUG_PUTS("err: pushed_task cond_init");
+    LOG_DEBUG("err: pushed_task cond_init");
     goto cleanup_mutex;
   }
   if (pthread_cond_init(&pool->cond_wait, NULL) != 0) {
-    DEBUG_PUTS("err: wait cond_init");
+    LOG_DEBUG("err: wait cond_init");
     goto cleanup_cond_pushed_task;
   }
 
   for (unsigned i = 0; i < nthreads; i++) {
     pthread_t thread;
     if (pthread_create(&thread, NULL, threadpool_thread_run, pool) != 0) {
-      DEBUG_PUTS("err: pcreate");
+      LOG_DEBUG("err: pcreate");
       goto cleanup_shutdown;
     }
     pool->alive_threads_count += 1;
 
     // NOTE: Maybe no need in err checking
     if (pthread_detach(thread)) {
-      DEBUG_PUTS("err: pdetatch");
+      LOG_DEBUG("err: pdetatch");
       goto cleanup_shutdown;
     }
   }
@@ -79,15 +70,15 @@ cleanup_shutdown:
 
   // cleanup_cond_wait:
   if (pthread_cond_destroy(&pool->cond_wait) != 0) {
-    DEBUG_PUTS("err: wait cond_destroy");
+    LOG_DEBUG("err: wait cond_destroy");
   }
 cleanup_cond_pushed_task:
   if (pthread_cond_destroy(&pool->cond_task_available) != 0) {
-    DEBUG_PUTS("err: pushed_task cond_destroy");
+    LOG_DEBUG("err: pushed_task cond_destroy");
   }
 cleanup_mutex:
   if (pthread_mutex_destroy(&pool->mutex) != 0) {
-    DEBUG_PUTS("err: mutex_destroy");
+    LOG_DEBUG("err: mutex_destroy");
   }
 cleanup_pool:
   free(pool);
@@ -97,7 +88,7 @@ cleanup_pool:
 // NOTE: waits finishing tasks inside
 int threadpool_destroy(ThreadPool *pool) {
   if (pool == NULL) {
-    DEBUG_PUTS("threadpool is NULL, nothing to free");
+    LOG_DEBUG("threadpool is NULL, nothing to free");
     return -1;
   }
   pthread_mutex_lock(&pool->mutex);
@@ -107,15 +98,15 @@ int threadpool_destroy(ThreadPool *pool) {
   threadpool_wait(pool);
 
   if (pthread_mutex_destroy(&pool->mutex) != 0) {
-    DEBUG_PUTS("err: mutex_destroy");
+    LOG_DEBUG("err: mutex_destroy");
     goto err;
   }
   if (pthread_cond_destroy(&pool->cond_task_available) != 0) {
-    DEBUG_PUTS("err: pushed_task cond_destroy");
+    LOG_DEBUG("err: pushed_task cond_destroy");
     goto err;
   }
   if (pthread_cond_destroy(&pool->cond_wait) != 0) {
-    DEBUG_PUTS("err: pushed_task cond_wait");
+    LOG_DEBUG("err: pushed_task cond_wait");
     goto err;
   }
   free(pool);
@@ -129,13 +120,13 @@ err:
 // NOTE: may add check is queue is full (add queue_max_size and check it)
 int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
   if (pool == NULL) {
-    DEBUG_PUTS("threadpool is NULL, cannot push");
+    LOG_DEBUG("threadpool is NULL, cannot push");
     return -1;
   }
 
   Task *new_node = malloc(sizeof(*new_node));
   if (!new_node) {
-    DEBUG_PRINTF("%s: new_node malloc fail %s", __func__, strerror(errno));
+    LOG_DEBUG_ERRNO("err: new_node malloc fail");
     return -1;
   }
   new_node->next = NULL;
@@ -151,8 +142,8 @@ int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
     pool->tail->next = new_node; // not empty queue
     pool->tail = new_node;
   }
-  DEBUG_PRINTF("Task pushed. tasks_count: %zu, working_threads_count: %zu",
-               pool->tasks_count, pool->working_threads_count);
+  LOG_DEBUG("Task pushed. tasks_count: %zu, working_threads_count: %zu",
+            pool->tasks_count, pool->working_threads_count);
   pthread_cond_signal(&pool->cond_task_available);
   pthread_mutex_unlock(&pool->mutex);
   return 0;
@@ -161,17 +152,9 @@ int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
 // NOTE: lock mutex before access
 int threadpool_pop(ThreadPool *pool, Task **task_ptr) {
   if (pool == NULL) {
-    DEBUG_PUTS("pool is NULL, nothing to pop");
+    LOG_DEBUG("pool is NULL, nothing to pop");
     return -1;
   }
-
-// Only for debug
-#ifndef NDEBUG
-  if (pool->head == NULL) {
-    DEBUG_PUTS("threadpool's head is NULL, nothing to pop");
-    exit(1);
-  }
-#endif
 
   Task *pop_task = pool->head;
   *task_ptr = pop_task;
@@ -206,8 +189,8 @@ void *threadpool_thread_run(void *arg) {
     Task *task;
     threadpool_pop(pool, &task);
     pool->working_threads_count++;
-    DEBUG_PRINTF("Starting Task. tasks_count: %zu, working_threads_count: %zu",
-                 pool->tasks_count, pool->working_threads_count);
+    LOG_DEBUG("Starting Task. tasks_count: %zu, working_threads_count: %zu",
+              pool->tasks_count, pool->working_threads_count);
     pthread_mutex_unlock(&pool->mutex);
 
     // Execute task
@@ -231,7 +214,7 @@ void *threadpool_thread_run(void *arg) {
 // untill all tasks are finishes
 void threadpool_wait(ThreadPool *pool) {
   if (pool == NULL) {
-    DEBUG_PUTS("pool is NULL, can't wait");
+    LOG_DEBUG("pool is NULL, can't wait");
     return;
   }
 

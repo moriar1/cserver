@@ -1,9 +1,8 @@
+#include "customlog.h"
 #include "threadpool.h"
 #include <arpa/inet.h>
-#include <err.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -31,30 +30,29 @@ static long read_file(const char *file_path, char **ptr) {
   // Open file
   FILE *fp = fopen(file_path, "rb");
   if (fp == NULL) {
-    warn("fopen `%s`", file_path);
+    LOG_ERRNO("fopen `%s`", file_path);
     return -1;
   }
 
   // Get filesize
   if (fseek(fp, 0, SEEK_END) != 0) {
-    warn("fseek end `%s`", file_path);
+    LOG_ERRNO("fseek end `%s`", file_path);
     fclose(fp);
     return -1;
   }
   long size = ftell(fp);
   if (size < 0) {
-    warn("ftell `%s`", file_path);
+    LOG_ERRNO("ftell `%s`", file_path);
     fclose(fp);
     return -1;
   }
   if (size == 0) {
-    // warnx("file `%s` is empty", file_path);
     *ptr = NULL;
     fclose(fp);
     return 0;
   }
   if (fseek(fp, 0L, SEEK_SET) != 0) {
-    warn("fseek set `%s`", file_path);
+    LOG_ERRNO("fseek set `%s`", file_path);
     fclose(fp);
     return -1;
   }
@@ -62,14 +60,14 @@ static long read_file(const char *file_path, char **ptr) {
   // read file
   char *buf = malloc(size);
   if (buf == NULL) {
-    warn("malloc `%s`", file_path);
+    LOG_ERRNO("malloc `%s`", file_path);
     fclose(fp);
     return -1;
   }
   if (fread(buf, size, 1, fp) != 1) {
     fclose(fp);
     free(buf);
-    warn("fread `%s`", file_path);
+    LOG_ERRNO("fread `%s`", file_path);
     return -1;
   }
 
@@ -100,9 +98,9 @@ static void networktask_send_html(void *arg) {
                      "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
 
         if (send(args->client_fd, send_headers, sz, 0) == -1) {
-          warn("send");
+          LOG_ERRNO("send");
         }
-        warnx("failed to read content");
+        LOG_ERROR("failed to read content");
       } else {
         // OK => 200
         long sz = snprintf(send_headers, sizeof(send_headers),
@@ -110,10 +108,10 @@ static void networktask_send_html(void *arg) {
                            content_lenght);
 
         if (send(args->client_fd, send_headers, sz, 0) == -1) {
-          warn("send");
+          LOG_ERRNO("send");
         }
         if (send(args->client_fd, content, content_lenght, 0) == -1) {
-          warn("send");
+          LOG_ERRNO("send");
         }
         free(content);
       }
@@ -123,15 +121,15 @@ static void networktask_send_html(void *arg) {
                          "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
 
       if (send(args->client_fd, send_headers, sz, 0) == -1) {
-        warn("send");
+        LOG_ERRNO("send");
       }
     }
   } else if (numbytes == 0) {
-    puts("server: disconnected by client");
+    LOG_INFO("disconnected by client");
   } else {
-    warn("recv");
+    LOG_ERRNO("recv");
   }
-  printf("server: closing connection...\n");
+  LOG_INFO("closing connection...");
   close(args->client_fd);
   free(arg);
 }
@@ -147,7 +145,7 @@ int main(void) {
 
   int rv;
   if ((rv = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0) {
-    err(1, "gai err: %s\n", gai_strerror(rv));
+    LOG_FATAL("gai err: %s", gai_strerror(rv));
   }
 
   // loop through all the results and bind to the first we can
@@ -164,21 +162,21 @@ int main(void) {
     }
     char ipstr[INET6_ADDRSTRLEN];
     inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
-    printf("server: binding to %s\n", ipstr);
+    LOG_INFO("binding to %s", ipstr);
 
     if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-      warn("socket");
+      LOG_ERRNO("socket");
       continue;
     }
 
     const int yes = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
-      err(2, "setsockopt");
+      LOG_FATAL_ERRNO("setsockopt");
     }
 
     if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
       close(sockfd);
-      warn("server:bind");
+      LOG_ERRNO("server:bind");
       continue;
     }
 
@@ -187,38 +185,38 @@ int main(void) {
   freeaddrinfo(servinfo);
 
   if (p == NULL) {
-    err(3, "failed to bind");
+    LOG_FATAL("failed to bind");
   }
 
   if (listen(sockfd, BACKLOG) == -1) {
-    err(4, "listen");
+    LOG_FATAL("listen");
   }
 
   ThreadPool *thread_pool = threadpool_init(NUM_THREADS);
   if (thread_pool == NULL) {
-    err(7, "thread_pool is NULL");
+    LOG_FATAL("thread_pool is NULL");
   }
 
-  puts("server: waiting for connections...");
+  LOG_INFO("waiting for connections...");
 
   while (1) {
     struct sockaddr_storage their_addr;
     socklen_t sin_size = sizeof their_addr;
     int new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
     if (new_fd == -1) {
-      warn("accept");
+      LOG_ERRNO("accept");
       continue;
     }
 
     char s[INET6_ADDRSTRLEN];
     inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr),
               s, sizeof s);
-    printf("server: got connection from %s\n", s);
+    LOG_INFO("got connection from %s", s);
 
     NetworkTask *task = malloc(sizeof(*task));
     if (task == NULL) {
       close(new_fd);
-      warn("malloc");
+      LOG_ERRNO("malloc");
       continue;
     }
 

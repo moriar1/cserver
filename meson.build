@@ -40,6 +40,7 @@ warnings_flags = [
     '-Werror=format-security',
     '-Werror=incompatible-pointer-types',
     '-Wno-sign-conversion',
+    '-Wno-gnu-zero-variadic-macro-arguments',
 ]
 
 link_flags = [
