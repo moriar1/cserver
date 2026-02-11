@@ -5,7 +5,7 @@ project(
     default_options: [
         'warning_level=3',
         'b_pie=true',
-        'c_std=c17',
+        'c_std=gnu17',  # using GNU variadic macro in `customlog.h`
         'b_ndebug=if-release',
         # 'b_lto=true',
     ],
@@ -41,6 +41,7 @@ warnings_flags = [
     '-Werror=incompatible-pointer-types',
     '-Wno-sign-conversion',
     '-Wno-gnu-zero-variadic-macro-arguments',
+    '-Wno-variadic-macros',
 ]
 
 link_flags = [
