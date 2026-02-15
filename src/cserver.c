@@ -79,60 +79,69 @@ static long read_file(const char *file_path, char **ptr) {
   return size;
 }
 
+static void send_404(int fd) {
+  const char *msg = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n";
+  if (send(fd, msg, strlen(msg), 0) == -1) {
+    LOG_ERRNO("send");
+  }
+}
+
 static void networktask_send_html(void *arg) {
   NetworkTask *args = arg;
+  int fd = args->client_fd;
   long numbytes = 0;
   char recv_buf[MAXDATASIZE];
-  char send_headers[MAXDATASIZE];
+  char *content = NULL;
 
-  numbytes = recv(args->client_fd, recv_buf, MAXDATASIZE - 1, 0);
-  if (numbytes > 0) {
-    recv_buf[numbytes] = 0; // for strncmp
-
-    if (strncmp(recv_buf, "GET", 3) == 0) {
-      char *content = NULL;
-      long content_lenght = read_file("index.html", &content);
-
-      if (content_lenght < 0) {
-        // Failed reading file => 404
-        long sz =
-            snprintf(send_headers, sizeof(send_headers),
-                     "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
-
-        if (send(args->client_fd, send_headers, sz, 0) == -1) {
-          LOG_ERRNO("send");
-        }
-        LOG_ERROR("failed to read content");
-      } else {
-        // OK => 200
-        long sz = snprintf(send_headers, sizeof(send_headers),
-                           "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",
-                           content_lenght);
-
-        if (send(args->client_fd, send_headers, sz, 0) == -1) {
-          LOG_ERRNO("send");
-        }
-        if (send(args->client_fd, content, content_lenght, 0) == -1) {
-          LOG_ERRNO("send");
-        }
-        free(content);
-      }
-    } else {
-      // If not GET request => 404
-      long sz = snprintf(send_headers, sizeof(send_headers),
-                         "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
-
-      if (send(args->client_fd, send_headers, sz, 0) == -1) {
-        LOG_ERRNO("send");
-      }
+  numbytes = recv(fd, recv_buf, MAXDATASIZE - 1, 0);
+  if (numbytes <= 0) {
+    if (numbytes < 0) {
+      LOG_ERRNO("recv");
     }
-  } else if (numbytes == 0) {
-    LOG_INFO("disconnected by client");
-  } else {
-    LOG_ERRNO("recv");
+    goto cleanup;
+  }
+
+  recv_buf[numbytes] = 0; // for strncmp
+  if (strncmp(recv_buf, "GET", 3) != 0) {
+    // If not GET request => 404
+    send_404(fd);
+    goto cleanup;
+  }
+
+  long content_lenght = read_file("index.html", &content);
+
+  if (content_lenght < 0) {
+    // Failed reading file => 404
+    LOG_ERROR("failed to read content");
+    send_404(fd);
+    goto cleanup;
+  }
+  // OK => 200
+  char send_headers[128];
+  long sz = snprintf(send_headers, sizeof(send_headers),
+                     "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",
+                     content_lenght);
+  if (sz < 0 || sz >= (long)sizeof(send_headers)) {
+    LOG_ERROR("snprintf header");
+    send_404(fd); // better send 5xx err code
+    goto cleanup;
+  }
+
+  if (send(fd, send_headers, sz, 0) == -1) {
+    LOG_ERRNO("send header");
+    goto cleanup;
+  }
+  if (send(fd, content, content_lenght, 0) == -1) {
+    LOG_ERRNO("send body");
+    goto cleanup;
+  }
+
+cleanup:
+  if (content) {
+    free(content);
   }
   LOG_INFO("closing connection...");
-  close(args->client_fd);
+  close(fd);
   free(arg);
 }
 
