@@ -79,10 +79,27 @@ static long read_file(const char *file_path, char **ptr) {
   return size;
 }
 
+static int send_all(int fd, const char *buf, long len) {
+  ssize_t sent = 0;
+  ssize_t n;
+
+  while (sent < len) {
+    if ((n = send(fd, buf + sent, len - sent, 0)) == -1) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return -1;
+    }
+    sent += n;
+  }
+  LOG_DEBUG("sent: %zd", sent);
+  return 0;
+}
+
 static void send_404(int fd) {
   const char *msg = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n";
-  if (send(fd, msg, strlen(msg), 0) == -1) {
-    LOG_ERRNO("send");
+  if (send_all(fd, msg, (long)strlen(msg)) == -1) {
+    LOG_ERRNO("send 404");
   }
 }
 
@@ -103,8 +120,7 @@ static void networktask_send_html(void *arg) {
 
   recv_buf[numbytes] = 0; // for strncmp
   if (strncmp(recv_buf, "GET", 3) != 0) {
-    // If not GET request => 404
-    send_404(fd);
+    send_404(fd); // If not GET request => 404
     goto cleanup;
   }
 
@@ -127,11 +143,11 @@ static void networktask_send_html(void *arg) {
     goto cleanup;
   }
 
-  if (send(fd, send_headers, sz, 0) == -1) {
+  if (send_all(fd, send_headers, sz) == -1) {
     LOG_ERRNO("send header");
     goto cleanup;
   }
-  if (send(fd, content, content_lenght, 0) == -1) {
+  if (send_all(fd, content, content_lenght) == -1) {
     LOG_ERRNO("send body");
     goto cleanup;
   }
