@@ -1,6 +1,7 @@
 #include "customlog.h"
 #include "threadpool.h"
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 enum {
   NUM_THREADS = 6,
   MAXDATASIZE = 4096,
+  TIMEOUT = 10,
   BACKLOG = 10, // How many pending connections queue will hold
 };
 
@@ -110,11 +112,25 @@ static void networktask_send_html(void *arg) {
   char recv_buf[MAXDATASIZE];
   char *content = NULL;
 
+  const struct timeval time = {.tv_sec = TIMEOUT, .tv_usec = 0};
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time))) {
+    LOG_ERRNO("failed set rcv timout");
+  }
+  if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &time, sizeof(time))) {
+    LOG_ERRNO("failed set snd timout");
+  }
+
   numbytes = recv(fd, recv_buf, MAXDATASIZE - 1, 0);
-  if (numbytes <= 0) {
-    if (numbytes < 0) {
+  if (numbytes < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      LOG_INFO("client timeout (no recv in %d seconds)", TIMEOUT);
+    } else {
       LOG_ERRNO("recv");
     }
+    goto cleanup;
+  }
+  if (numbytes == 0) {
+    LOG_INFO("client disconnected");
     goto cleanup;
   }
 
