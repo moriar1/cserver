@@ -108,9 +108,6 @@ static void send_404(int fd) {
 static void networktask_send_html(void *arg) {
   NetworkTask *args = arg;
   int fd = args->client_fd;
-  long numbytes = 0;
-  char recv_buf[MAXDATASIZE];
-  char *content = NULL;
 
   const struct timeval time = {.tv_sec = TIMEOUT, .tv_usec = 0};
   if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time))) {
@@ -120,26 +117,52 @@ static void networktask_send_html(void *arg) {
     LOG_ERRNO("failed set snd timout");
   }
 
-  numbytes = recv(fd, recv_buf, MAXDATASIZE - 1, 0);
-  if (numbytes < 0) {
-    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      LOG_INFO("client timeout (no recv in %d seconds)", TIMEOUT);
-    } else {
-      LOG_ERRNO("recv");
+  char *content = NULL;
+  char recv_buf[MAXDATASIZE];
+  char full_request[MAXDATASIZE];
+  unsigned long total_nbytes = 0;
+  long numbytes = 0;
+  while (true) {
+    // Err
+    numbytes = recv(fd, recv_buf, MAXDATASIZE - 1, 0);
+    if (numbytes < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        LOG_INFO("client timeout (no recv in %d seconds)", TIMEOUT);
+      } else {
+        LOG_ERRNO("recv");
+      }
+      goto cleanup;
     }
-    goto cleanup;
-  }
-  if (numbytes == 0) {
-    LOG_INFO("client disconnected");
-    goto cleanup;
+    // Disconnect
+    if (numbytes == 0) {
+      LOG_INFO("client disconnected");
+      goto cleanup;
+    }
+    // Ok
+    recv_buf[numbytes] = 0; // for strstr
+
+    // if too long headers => copy buf and break
+    if (total_nbytes + numbytes > sizeof(recv_buf)) {
+      memcpy(full_request + total_nbytes, recv_buf,
+             sizeof(recv_buf) - total_nbytes);
+      break;
+    }
+
+    if (strstr(recv_buf, "\r\n\r\n") != NULL) {
+      memcpy(full_request + total_nbytes, recv_buf, numbytes);
+      total_nbytes += numbytes;
+      break;
+    }
+    memcpy(full_request + total_nbytes, recv_buf, numbytes);
+    memset(recv_buf, 0, sizeof(recv_buf));
+    total_nbytes += numbytes;
   }
 
-  recv_buf[numbytes] = 0; // for strncmp
-  if (strncmp(recv_buf, "GET", 3) != 0) {
+  full_request[total_nbytes] = 0; // for strncmp
+  if (strncmp(full_request, "GET", 3) != 0) {
     send_404(fd); // If not GET request => 404
     goto cleanup;
   }
-
   long content_lenght = read_file("index.html", &content);
 
   if (content_lenght < 0) {
