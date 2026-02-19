@@ -14,9 +14,11 @@
   } while (0)
 #define LOG_ERRNO_IMPL(level, fmt, ...)                                        \
   do {                                                                         \
-    const int saved_errno = errno;                                             \
+    const int saved_errno__ = errno;                                           \
+    char my_buf__[128];                                                        \
+    strerror_r(saved_errno__, my_buf__, sizeof my_buf__);                      \
     fprintf(stderr, "[%s] %s:%d: " fmt ": %s\n", level, __func__, __LINE__,    \
-            ##__VA_ARGS__, strerror(saved_errno));                             \
+            ##__VA_ARGS__, my_buf__);                                          \
   } while (0)
 
 // Interface
@@ -33,9 +35,11 @@
   } while (0)
 #define LOG_FATAL_ERRNO(fmt, ...)                                              \
   do {                                                                         \
-    const int saved_errno = errno;                                             \
+    const int saved_errno__ = errno;                                           \
+    char my_buf__[128];                                                        \
+    strerror_r(saved_errno__, my_buf__, sizeof my_buf__);                      \
     fprintf(stderr, "[FATAL] %s:%d: " fmt ": %s\n", __func__, __LINE__,        \
-            ##__VA_ARGS__, strerror(saved_errno));                             \
+            ##__VA_ARGS__, my_buf__);                                          \
     abort();                                                                   \
   } while (0)
 
