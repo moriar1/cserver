@@ -89,6 +89,7 @@ if cc_id == 'clang'
         '-Wno-conditional-uninitialized',
         '-Wno-covered-switch-default',
         '-Wno-disabled-macro-expansion',
+        '-Wno-pre-c11-compat'
     ]
     if buildtype == 'release'
         build_type_flags += ['-mretpoline']

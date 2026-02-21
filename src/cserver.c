@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <stdnoreturn.h>
 #include <unistd.h>
 
 #define PORT "3490"
@@ -68,7 +69,7 @@ static int setup_server(void) {
   return sockfd;
 }
 
-static int server_loop(int server_fd, ThreadPool **thread_pool) {
+static noreturn void server_loop(int server_fd, ThreadPool **thread_pool) {
   while (1) {
     struct sockaddr_storage their_addr;
     socklen_t sin_size = sizeof their_addr;
