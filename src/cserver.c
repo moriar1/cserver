@@ -107,6 +107,48 @@ static void send_404(int fd) {
   }
 }
 
+static int handle_http_request(int fd, const char *recv_buf) {
+  if (strncmp(recv_buf, "GET", 3) != 0) {
+    send_404(fd); // If not GET request => TODO: 4xx
+    return -1;
+  }
+
+  char *content = NULL;
+  long content_lenght = read_file("index.html", &content);
+
+  if (content_lenght < 0) {
+    // Failed reading file => 404
+    LOG_ERROR("failed to read content");
+    send_404(fd);
+    return -1;
+  }
+  // OK => 200
+  char send_headers[128];
+  long sz = snprintf(send_headers, sizeof(send_headers),
+                     "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",
+                     content_lenght);
+  if (sz < 0 || sz >= (long)sizeof(send_headers)) {
+    LOG_ERROR("snprintf header");
+    send_404(fd); // better send 5xx err code
+    free(content);
+    return -1;
+  }
+
+  if (send_all(fd, send_headers, sz) == -1) {
+    LOG_ERRNO("send header");
+    free(content);
+    return -1;
+  }
+  if (send_all(fd, content, content_lenght) == -1) {
+    LOG_ERRNO("send body");
+    free(content);
+    return -1;
+  }
+
+  free(content);
+  return 0;
+}
+
 static void networktask_send_html(void *arg) {
   NetworkTask *args = arg;
   int fd = args->client_fd;
@@ -119,7 +161,6 @@ static void networktask_send_html(void *arg) {
     LOG_ERRNO("failed set snd timout");
   }
 
-  char *content = NULL;
   char recv_buf[MAXDATASIZE];
   size_t total_nbytes = 0;
   ssize_t numbytes = 0;
@@ -159,43 +200,11 @@ static void networktask_send_html(void *arg) {
       // goto cleanup;
     }
   }
-
-  if (strncmp(recv_buf, "GET", 3) != 0) {
-    send_404(fd); // If not GET request => TODO: 4xx
-    goto cleanup;
-  }
-  long content_lenght = read_file("index.html", &content);
-
-  if (content_lenght < 0) {
-    // Failed reading file => 404
-    LOG_ERROR("failed to read content");
-    send_404(fd);
-    goto cleanup;
-  }
-  // OK => 200
-  char send_headers[128];
-  long sz = snprintf(send_headers, sizeof(send_headers),
-                     "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",
-                     content_lenght);
-  if (sz < 0 || sz >= (long)sizeof(send_headers)) {
-    LOG_ERROR("snprintf header");
-    send_404(fd); // better send 5xx err code
-    goto cleanup;
-  }
-
-  if (send_all(fd, send_headers, sz) == -1) {
-    LOG_ERRNO("send header");
-    goto cleanup;
-  }
-  if (send_all(fd, content, content_lenght) == -1) {
-    LOG_ERRNO("send body");
-    goto cleanup;
+  if (handle_http_request(fd, recv_buf) != 0) {
+    LOG_ERROR("Failed handle http request");
   }
 
 cleanup:
-  if (content) {
-    free(content);
-  }
   LOG_INFO("closing connection...");
   close(fd);
   free(arg);
