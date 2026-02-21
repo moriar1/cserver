@@ -54,7 +54,7 @@ void networktask_send_html(void *arg) {
         LOG_ERRNO("recv EINTR");
         continue;
       }
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      if (errno == EAGAIN) {
         LOG_INFO("client timeout (no recv in %d seconds)", TIMEOUT);
       } else {
         LOG_ERRNO("recv");
