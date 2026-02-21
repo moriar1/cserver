@@ -1,22 +1,39 @@
 import requests
 from pathlib import Path
-import time
 
-time.sleep(3)  # Ensure cserver has enough time to start up
-
-# GET => 200 OK
+# GET => 200
 try:
     res = requests.get("http://localhost:3490", timeout=5)
 except requests.exceptions.ConnectionError:
-    exit("Server is down [GET]")
-
-assert res.status_code == 200
+    exit("Server is down")
+assert res.status_code == 200, res.status_code
 assert res.text == Path("index.html").read_text()
 
-# POST => 404 NOT FOUND
+# Too long path => 400
 try:
-    res = requests.post("http://localhost:3490", timeout=5)
+    res = requests.get("http://localhost:3490/" + ("1" * 512), timeout=5)
 except requests.exceptions.ConnectionError:
-    exit("Server is down [POST]")
+    exit("Server is down")
+assert res.status_code == 400, res.status_code
 
-assert res.status_code == 404
+# ../ (Path Traversal) => 403
+try:
+    res = requests.get("http://localhost:3490/\../", timeout=5)
+except requests.exceptions.ConnectionError:
+    exit("Server is down")
+assert res.status_code == 403, res.status_code
+
+# Wrong path => 404
+try:
+    res = requests.get("http://localhost:3490/file_not_exists.txtt", timeout=5)
+except requests.exceptions.ConnectionError:
+    exit("Server is down")
+assert res.status_code == 404, res.status_code
+
+# Too long headers => 431
+try:
+    headers = {"Large-Header": "a" * 4096}
+    res = requests.post("http://localhost:3490", timeout=5, headers=headers)
+except requests.exceptions.ConnectionError:
+    exit("Server is down")
+assert res.status_code == 431, res.status_code
