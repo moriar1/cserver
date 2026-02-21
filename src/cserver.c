@@ -201,7 +201,7 @@ cleanup:
   free(arg);
 }
 
-int main(void) {
+static int setup_server(void) {
   struct addrinfo hints;
   struct addrinfo *servinfo;
 
@@ -243,7 +243,7 @@ int main(void) {
 
     if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
       close(sockfd);
-      LOG_ERRNO("server:bind");
+      LOG_ERRNO("bind");
       continue;
     }
 
@@ -258,6 +258,11 @@ int main(void) {
   if (listen(sockfd, BACKLOG) == -1) {
     LOG_FATAL("listen");
   }
+  return sockfd;
+}
+
+int main(void) {
+  int server_fd = setup_server(); // errors handling inside
 
   ThreadPool *thread_pool = threadpool_init(NUM_THREADS);
   if (thread_pool == NULL) {
@@ -269,7 +274,7 @@ int main(void) {
   while (1) {
     struct sockaddr_storage their_addr;
     socklen_t sin_size = sizeof their_addr;
-    int new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+    int new_fd = accept(server_fd, (struct sockaddr *)&their_addr, &sin_size);
     if (new_fd == -1) {
       LOG_ERRNO("accept");
       continue;
