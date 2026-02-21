@@ -1,9 +1,6 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
-#include <pthread.h>
-#include <stdbool.h>
-
 typedef struct Task Task;
 typedef struct ThreadPool ThreadPool;
 

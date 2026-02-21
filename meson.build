@@ -10,7 +10,7 @@ project(
         # 'b_lto=true',
     ],
 )
-src = ['src/cserver.c', 'src/threadpool.c']
+src = ['src/cserver.c', 'src/threadpool.c', 'src/connection.c']
 incdir = include_directories('include')
 
 # ---- Common Compiler Flags ----
