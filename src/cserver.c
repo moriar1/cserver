@@ -270,16 +270,7 @@ static int setup_server(void) {
   return sockfd;
 }
 
-int main(void) {
-  int server_fd = setup_server(); // errors handling inside
-
-  ThreadPool *thread_pool = threadpool_init(NUM_THREADS);
-  if (thread_pool == NULL) {
-    LOG_FATAL("thread_pool is NULL");
-  }
-
-  LOG_INFO("waiting for connections...");
-
+static int server_loop(int server_fd, ThreadPool **thread_pool) {
   while (1) {
     struct sockaddr_storage their_addr;
     socklen_t sin_size = sizeof their_addr;
@@ -302,6 +293,23 @@ int main(void) {
     }
 
     task->client_fd = new_fd;
-    threadpool_push(thread_pool, networktask_send_html, task);
+    if (threadpool_push(*thread_pool, networktask_send_html, task) != 0) {
+      LOG_ERROR("threadpool_push");
+    }
   }
+}
+
+int main(void) {
+  int server_fd = setup_server(); // errors handling inside
+
+  ThreadPool *thread_pool = threadpool_init(NUM_THREADS);
+  if (thread_pool == NULL) {
+    LOG_FATAL("thread_pool is NULL");
+  }
+  LOG_INFO("waiting for connections...");
+
+  server_loop(server_fd, &thread_pool);
+
+  // TODO: greaceful shutdown
+  // threadpool_destroy(thread_pool);
 }
