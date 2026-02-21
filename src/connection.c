@@ -1,6 +1,7 @@
 #include "connection.h"
 #include "customlog.h"
 #include <netinet/in.h>
+#include <stddef.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -80,9 +81,7 @@ void networktask_send_html(void *arg) {
       // goto cleanup;
     }
   }
-  if (handle_http_request(fd, recv_buf) != 0) {
-    LOG_ERROR("Failed handle http request");
-  }
+  handle_http_request(fd, recv_buf);
 
 cleanup:
   LOG_INFO("closing connection...");
@@ -150,13 +149,53 @@ void send_404(int fd) {
 }
 
 int handle_http_request(int fd, const char *recv_buf) {
-  if (strncmp(recv_buf, "GET", 3) != 0) {
-    send_404(fd); // If not GET request => TODO: 4xx
+  if (strncmp(recv_buf, "GET ", 4) != 0) {
+    send_404(fd);
+    return -1;
+  }
+  recv_buf += 4; // Skip `GET `
+
+  // Extract path
+  const char *ptr;
+  if ((ptr = strstr(recv_buf, " ")) == NULL) {
+    send_404(fd); // TODO: 4xx
     return -1;
   }
 
+  ptrdiff_t path_len = ptr - recv_buf;
+  if (path_len == 0 || path_len > 128) {
+    send_404(fd);
+  }
+  // +2 for dot at the begining ("./index.html") and \0 at the end
+  char *path = malloc(sizeof(char) * (path_len + 2));
+  if (path == NULL) {
+    LOG_ERRNO("path malloc");
+    return -1;
+  }
+  path[0] = '.';
+  memcpy(path + 1, recv_buf, path_len);
+  path[path_len + 1] = 0;
+
+  // skip requests with `../../` in path
+  if (strstr(path, "..") != NULL) {
+    send_404(fd); // TODO: 4xx
+    free(path);
+    return -1;
+  }
+  if (path_len == 1 && path[1] == '/') {
+    free(path); // no need in realloc (because of changing buffer)
+    path = malloc(11);
+    if (path == NULL) {
+      LOG_ERRNO("realloc");
+      return -1;
+    }
+    snprintf(path, 11, "index.html");
+  }
+
+  // Read requested file
   char *content = NULL;
-  long content_lenght = read_file("index.html", &content);
+  long content_lenght = read_file(path, &content);
+  free(path);
 
   if (content_lenght < 0) {
     // Failed reading file => 404
