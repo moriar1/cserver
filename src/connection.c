@@ -13,8 +13,8 @@ void *get_in_addr(struct sockaddr *sa) {
   return &(((struct sockaddr_in6 *)sa)->sin6_addr);
 }
 
-int send_all(int fd, const char *buf, long len) {
-  ssize_t sent = 0;
+int send_all(int fd, const char *buf, size_t len) {
+  size_t sent = 0;
   ssize_t n;
 
   while (sent < len) {
@@ -26,8 +26,53 @@ int send_all(int fd, const char *buf, long len) {
     }
     sent += n;
   }
-  LOG_DEBUG("sent: %zd", sent);
   return 0;
+}
+
+static void send_400(int fd) {
+  static const char m[] =
+      "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+  if (send_all(fd, m, sizeof(m) - 1) == -1) {
+    LOG_ERRNO("send 400");
+  }
+}
+
+static void send_403(int fd) {
+  static const char m[] = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
+  if (send_all(fd, m, sizeof(m) - 1) == -1) {
+    LOG_ERRNO("send 403");
+  }
+}
+
+static void send_404(int fd) {
+  static const char m[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+  if (send_all(fd, m, sizeof(m) - 1) == -1) {
+    LOG_ERRNO("send 404");
+  }
+}
+
+static void send_405(int fd) {
+  static const char m[] =
+      "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n";
+  if (send_all(fd, m, sizeof(m) - 1) == -1) {
+    LOG_ERRNO("send 405");
+  }
+}
+
+static void send_431(int fd) {
+  static const char m[] = "HTTP/1.1 431 Request Header Fields Too "
+                          "Large\r\nContent-Length: 0\r\n\r\n";
+  if (send_all(fd, m, sizeof(m) - 1) == -1) {
+    LOG_ERRNO("send 431");
+  }
+}
+
+static void send_500(int fd) {
+  static const char m[] =
+      "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+  if (send_all(fd, m, sizeof(m) - 1) == -1) {
+    LOG_ERRNO("send 500");
+  }
 }
 
 void networktask_send_html(void *arg) {
@@ -73,12 +118,10 @@ void networktask_send_html(void *arg) {
       break; // found end of headers
     }
 
-    // Too long headers
+    // Too long headers => 431
     if (total_nbytes >= sizeof(recv_buf) - 2) {
-      LOG_DEBUG("too long headers");
-      break;
-      // send_404(fd); // TODO: send another 4xx
-      // goto cleanup;
+      send_431(fd);
+      goto cleanup;
     }
   }
   handle_http_request(fd, recv_buf);
@@ -95,7 +138,7 @@ static long read_file(const char *file_path, char **ptr) {
   FILE *fp = fopen(file_path, "rb");
   if (fp == NULL) {
     LOG_ERRNO("fopen `%s`", file_path);
-    return -1;
+    return -2;
   }
 
   // Get filesize
@@ -141,30 +184,25 @@ static long read_file(const char *file_path, char **ptr) {
   return size;
 }
 
-void send_404(int fd) {
-  const char *msg = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n";
-  if (send_all(fd, msg, (long)strlen(msg)) == -1) {
-    LOG_ERRNO("send 404");
-  }
-}
-
 int handle_http_request(int fd, const char *recv_buf) {
+  // Not GET => 405
   if (strncmp(recv_buf, "GET ", 4) != 0) {
-    send_404(fd);
+    send_405(fd);
     return -1;
   }
   recv_buf += 4; // Skip `GET `
 
-  // Extract path
+  // --- Extract path ---
   const char *ptr;
   if ((ptr = strstr(recv_buf, " ")) == NULL) {
-    send_404(fd); // TODO: 4xx
+    send_400(fd); // not found path => 400
     return -1;
   }
 
   ptrdiff_t path_len = ptr - recv_buf;
   if (path_len == 0 || path_len > 128) {
-    send_404(fd);
+    send_400(fd); // path issue => 400
+    return -1;
   }
   // +2 for dot at the begining ("./index.html") and \0 at the end
   char *path = malloc(sizeof(char) * (path_len + 2));
@@ -176,12 +214,13 @@ int handle_http_request(int fd, const char *recv_buf) {
   memcpy(path + 1, recv_buf, path_len);
   path[path_len + 1] = 0;
 
-  // skip requests with `../../` in path
+  // request with `../../` in path => 403
   if (strstr(path, "..") != NULL) {
-    send_404(fd); // TODO: 4xx
+    send_403(fd);
     free(path);
     return -1;
   }
+  // response index.html for `GET /`
   if (path_len == 1 && path[1] == '/') {
     free(path); // no need in realloc (because of changing buffer)
     path = malloc(11);
@@ -189,18 +228,29 @@ int handle_http_request(int fd, const char *recv_buf) {
       LOG_ERRNO("realloc");
       return -1;
     }
-    snprintf(path, 11, "index.html");
+    int a = 0;
+    if ((a = snprintf(path, 11, "index.html")) != 10) {
+      LOG_ERROR("snprintf index.html: %d", a);
+      send_500(fd);
+      free(path);
+      return -1;
+    }
   }
 
-  // Read requested file
+  // --- Read requested file ---
   char *content = NULL;
   long content_lenght = read_file(path, &content);
   free(path);
 
+  // Failed reading file
   if (content_lenght < 0) {
-    // Failed reading file => 404
+    if (errno == ENOENT) { // file not found
+      send_404(fd);
+      return -1;
+    }
+    // any other issue => 500
     LOG_ERROR("failed to read content");
-    send_404(fd);
+    send_500(fd);
     return -1;
   }
   // OK => 200
@@ -210,7 +260,7 @@ int handle_http_request(int fd, const char *recv_buf) {
                      content_lenght);
   if (sz < 0 || sz >= (long)sizeof(send_headers)) {
     LOG_ERROR("snprintf header");
-    send_404(fd); // better send 5xx err code
+    send_500(fd);
     free(content);
     return -1;
   }

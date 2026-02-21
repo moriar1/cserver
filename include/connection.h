@@ -15,9 +15,8 @@ typedef struct {
 } NetworkTask;
 
 void *get_in_addr(struct sockaddr *sa);
-int send_all(int fd, const char *buf, long len);
+int send_all(int fd, const char *buf, size_t len);
 void networktask_send_html(void *arg);
-void send_404(int fd);
 int handle_http_request(int fd, const char *recv_buf);
 
 #endif
