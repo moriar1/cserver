@@ -184,6 +184,31 @@ static long read_file(const char *file_path, char **ptr) {
   return size;
 }
 
+__attribute__((pure)) static const char *get_mime_type(const char *restrict pth,
+                                                       size_t len) {
+  if (len < 4) {
+    return "application/octet-stream";
+  }
+  if (strncmp(pth + len - 4, ".html", 5) == 0 ||
+      strncmp(pth + len - 3, ".htm", 4) == 0) {
+    return "text/html";
+  }
+  if (strncmp(pth + len - 4, ".jpeg", 5) == 0 ||
+      strncmp(pth + len - 3, ".jpg", 4) == 0) {
+    return "image/jpeg";
+  }
+  if (strncmp(pth + len - 3, ".png", 4) == 0) {
+    return "image/png";
+  }
+  if (strncmp(pth + len - 3, ".css", 3) == 0) {
+    return "text/css";
+  }
+  if (strncmp(pth + len - 2, ".js", 2) == 0) {
+    return "application/javascript";
+  }
+  return "application/octet-stream";
+}
+
 int handle_http_request(int fd, const char *recv_buf) {
   // Not GET => 405
   if (strncmp(recv_buf, "GET ", 4) != 0) {
@@ -194,18 +219,18 @@ int handle_http_request(int fd, const char *recv_buf) {
 
   // --- Extract path ---
   const char *ptr;
-  if ((ptr = strstr(recv_buf, " ")) == NULL) {
+  if ((ptr = strchr(recv_buf, ' ')) == NULL) {
     send_400(fd); // not found path => 400
     return -1;
   }
 
-  ptrdiff_t path_len = ptr - recv_buf;
+  size_t path_len = ptr - recv_buf; // `\0` and `/` counts too
   if (path_len == 0 || path_len > 128) {
     send_400(fd); // path issue => 400
     return -1;
   }
   // +2 for dot at the begining ("./index.html") and \0 at the end
-  char *path = malloc(sizeof(char) * (path_len + 2));
+  char *path = malloc(sizeof(char) * (path_len + 2)); // TODO: use stack
   if (path == NULL) {
     LOG_ERRNO("path malloc");
     return -1;
@@ -223,49 +248,56 @@ int handle_http_request(int fd, const char *recv_buf) {
   // response index.html for `GET /`
   if (path_len == 1 && path[1] == '/') {
     free(path); // no need in realloc (because of changing buffer)
-    path = malloc(11);
+    path = malloc(13);
     if (path == NULL) {
       LOG_ERRNO("realloc");
       return -1;
     }
     int a = 0;
-    if ((a = snprintf(path, 11, "index.html")) != 10) {
+    if ((a = snprintf(path, 13, "./index.html")) != 12) {
       LOG_ERROR("snprintf index.html: %d", a);
       send_500(fd);
       free(path);
       return -1;
     }
+    path_len = 11;
   }
 
   // --- Read requested file ---
   char *content = NULL;
   long content_lenght = read_file(path, &content);
-  free(path);
 
   // Failed reading file
   if (content_lenght < 0) {
     if (errno == ENOENT) { // file not found
       send_404(fd);
+      free(path);
       return -1;
     }
     // any other issue => 500
+    free(path);
     LOG_ERROR("failed to read content");
     send_500(fd);
     return -1;
   }
+
+  const char *mime = get_mime_type(path, path_len);
+  free(path);
+
   // OK => 200
-  char send_headers[128];
-  long sz = snprintf(send_headers, sizeof(send_headers),
-                     "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",
-                     content_lenght);
-  if (sz < 0 || sz >= (long)sizeof(send_headers)) {
+  char headers[128];
+  long sz = snprintf(
+      headers, sizeof(headers),
+      "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\nContent-Type: %s\r\n\r\n",
+      content_lenght, mime);
+  if (sz < 0 || sz >= (long)sizeof(headers)) {
     LOG_ERROR("snprintf header");
     send_500(fd);
     free(content);
     return -1;
   }
 
-  if (send_all(fd, send_headers, sz) == -1) {
+  if (send_all(fd, headers, sz) == -1) {
     LOG_ERRNO("send header");
     free(content);
     return -1;
