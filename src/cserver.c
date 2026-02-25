@@ -4,10 +4,21 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdnoreturn.h>
 #include <unistd.h>
 
 #define PORT "3490"
+
+static int accept_fd = -1;
+static volatile sig_atomic_t running = 1;
+
+static void fatalsig(int __attribute__((unused)) signum) {
+  running = 0;
+  if (accept_fd >= 0) {
+    shutdown(accept_fd, SHUT_RDWR);
+  }
+}
 
 static int setup_server(void) {
   struct addrinfo hints;
@@ -69,12 +80,16 @@ static int setup_server(void) {
   return sockfd;
 }
 
-static noreturn void server_loop(int server_fd, ThreadPool **thread_pool) {
-  while (1) {
+static void server_loop(int server_fd, ThreadPool **thread_pool) {
+  while (running) {
     struct sockaddr_storage their_addr;
     socklen_t sin_size = sizeof their_addr;
     int new_fd = accept(server_fd, (struct sockaddr *)&their_addr, &sin_size);
+
     if (new_fd == -1) {
+      if (running == 0) { // fatalsig() called
+        break;
+      }
       LOG_ERRNO("accept");
       continue;
     }
@@ -94,12 +109,26 @@ static noreturn void server_loop(int server_fd, ThreadPool **thread_pool) {
     task->client_fd = new_fd;
     if (threadpool_push(*thread_pool, networktask_send_html, task) != 0) {
       LOG_ERROR("threadpool_push");
+      close(new_fd);
+      free(task);
     }
   }
 }
 
 int main(void) {
-  int server_fd = setup_server(); // errors handling inside
+  int server_fd = setup_server();
+  accept_fd = server_fd; // static var for signal handling in fatalsig()
+
+  // Set signal handlers
+  struct sigaction action;
+  memset(&action, 0, sizeof(struct sigaction));
+  action.sa_handler = fatalsig;
+  sigaction(SIGTERM, &action, NULL);
+  sigaction(SIGINT, &action, NULL);
+
+  // Ignore SIGPIPE
+  action.sa_handler = SIG_IGN;
+  sigaction(SIGPIPE, &action, NULL);
 
   ThreadPool *thread_pool = threadpool_init(NUM_THREADS);
   if (thread_pool == NULL) {
@@ -109,6 +138,9 @@ int main(void) {
 
   server_loop(server_fd, &thread_pool);
 
-  // TODO: greaceful shutdown
-  // threadpool_destroy(thread_pool);
+  LOG_INFO("shutting down...");
+  threadpool_destroy(thread_pool);
+  if (server_fd != -1) {
+    close(server_fd);
+  }
 }
