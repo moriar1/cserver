@@ -2,22 +2,23 @@
 #include "customlog.h"
 #include "threadpool.h"
 #include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdnoreturn.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 #define PORT "3490"
 
-static int accept_fd = -1;
 static volatile sig_atomic_t running = 1;
+static int pipe_fds[2];
 
 static void fatalsig(int __attribute__((unused)) signum) {
   running = 0;
-  if (accept_fd >= 0) {
-    shutdown(accept_fd, SHUT_RDWR);
-  }
+  write(pipe_fds[1], "f", 1); // interrupt `select()` waiting
 }
 
 static int setup_server(void) {
@@ -82,42 +83,70 @@ static int setup_server(void) {
 
 static void server_loop(int server_fd, ThreadPool **thread_pool) {
   while (running) {
-    struct sockaddr_storage their_addr;
-    socklen_t sin_size = sizeof their_addr;
-    int new_fd = accept(server_fd, (struct sockaddr *)&their_addr, &sin_size);
+    fd_set readset;
+    FD_ZERO(&readset);
+    FD_SET(pipe_fds[0], &readset);
+    FD_SET(server_fd, &readset);
 
-    if (new_fd == -1) {
-      if (running == 0) { // fatalsig() called
-        break;
+    int max_fd = 1 + (pipe_fds[0] > server_fd ? pipe_fds[0] : server_fd);
+    if (select(max_fd, &readset, NULL, NULL, NULL) == -1) {
+      if (errno == EINTR) {
+        continue; // interrupted by signal
       }
-      LOG_ERRNO("accept");
-      continue;
+      LOG_ERRNO("select"); // log if (errno != ENITR)
     }
 
-    char s[INET6_ADDRSTRLEN];
-    inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr),
-              s, sizeof s);
-    LOG_INFO("got connection from %s", s);
-
-    NetworkTask *task = malloc(sizeof(*task));
-    if (task == NULL) {
-      close(new_fd);
-      LOG_ERRNO("malloc");
-      continue;
+    if (FD_ISSET(pipe_fds[0], &readset)) {
+      // NOTE: In fact, this condition should not be triggered at all,
+      // because after select is being interupted by SIGINT, `running` sets to 0
+      // If use `while(1)` then this condition is triggred
+      break;
     }
 
-    task->client_fd = new_fd;
-    if (threadpool_push(*thread_pool, networktask_send_html, task) != 0) {
-      LOG_ERROR("threadpool_push");
-      close(new_fd);
-      free(task);
+    if (FD_ISSET(server_fd, &readset)) {
+      struct sockaddr_storage their_addr;
+      socklen_t sin_size = sizeof their_addr;
+      int new_fd = accept(server_fd, (struct sockaddr *)&their_addr, &sin_size);
+
+      if (new_fd == -1) {
+        if (running == 0) { // fatalsig() called
+          break;
+        }
+        LOG_ERRNO("accept");
+        continue;
+      }
+
+      char s[INET6_ADDRSTRLEN];
+      inet_ntop(their_addr.ss_family,
+                get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
+      LOG_INFO("got connection from %s", s);
+
+      NetworkTask *task = malloc(sizeof(*task));
+      if (task == NULL) {
+        close(new_fd);
+        LOG_ERRNO("malloc");
+        continue;
+      }
+
+      task->client_fd = new_fd;
+      if (threadpool_push(*thread_pool, networktask_send_html, task) != 0) {
+        LOG_ERROR("threadpool_push");
+        close(new_fd);
+        free(task);
+      }
     }
   }
+  close(pipe_fds[0]);
+  close(pipe_fds[1]);
 }
 
 int main(void) {
+  // Init global self-pipe for signal handling
+  if (pipe(pipe_fds) < 0) {
+    LOG_FATAL_ERRNO("pipe");
+  }
+
   int server_fd = setup_server();
-  accept_fd = server_fd; // static var for signal handling in fatalsig()
 
   // Set signal handlers
   struct sigaction action;

@@ -21,6 +21,7 @@ Checks:
   - -android-cloexec-accept
   - -readability-function-cognitive-complexity
   - -android-cloexec-fopen
+  - -android-cloexec-pipe
 UseColor: true
 # WarningsAsErrors: ''
 # HeaderFilterRegex: ''
