@@ -1,9 +1,15 @@
 #include "connection.h"
 #include "customlog.h"
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <stddef.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+
+#ifdef __linux__
+#include <sys/sendfile.h>
+#endif
 
 void *get_in_addr(struct sockaddr *sa) {
   if (sa->sa_family == AF_INET) {
@@ -132,58 +138,6 @@ cleanup:
   free(arg);
 }
 
-// NOTE: if error occured ptr is unchanged
-static long read_file(const char *file_path, char **ptr) {
-  // Open file
-  FILE *fp = fopen(file_path, "rb");
-  if (fp == NULL) {
-    LOG_ERRNO("fopen `%s`", file_path);
-    return -2;
-  }
-
-  // Get filesize
-  if (fseek(fp, 0, SEEK_END) != 0) {
-    LOG_ERRNO("fseek end `%s`", file_path);
-    fclose(fp);
-    return -1;
-  }
-  long size = ftell(fp);
-  if (size < 0) {
-    LOG_ERRNO("ftell `%s`", file_path);
-    fclose(fp);
-    return -1;
-  }
-  if (size == 0) {
-    *ptr = NULL;
-    fclose(fp);
-    return 0;
-  }
-  if (fseek(fp, 0L, SEEK_SET) != 0) {
-    LOG_ERRNO("fseek set `%s`", file_path);
-    fclose(fp);
-    return -1;
-  }
-
-  // read file
-  char *buf = malloc(size);
-  if (buf == NULL) {
-    LOG_ERRNO("malloc `%s`", file_path);
-    fclose(fp);
-    return -1;
-  }
-  if (fread(buf, size, 1, fp) != 1) {
-    fclose(fp);
-    free(buf);
-    LOG_ERRNO("fread `%s`", file_path);
-    return -1;
-  }
-
-  // Return buffer and its size
-  *ptr = buf;
-  fclose(fp);
-  return size;
-}
-
 __attribute__((pure)) static const char *get_mime_type(const char *restrict pth,
                                                        size_t len) {
   if (len < 4) {
@@ -248,48 +202,64 @@ int handle_http_request(int fd, const char *recv_buf) {
     path_len = 11;
   }
 
-  // --- Read requested file ---
-  char *content = NULL;
-  long content_lenght = read_file(path, &content);
-
-  // Failed reading file
-  if (content_lenght < 0) {
-    if (errno == ENOENT) { // file not found
+  struct stat st;
+  if (stat(path, &st) == -1) {
+    if (errno == ENOENT) {
       send_404(fd);
       return -1;
     }
-    // any other issue => 500
-    LOG_ERROR("failed to read content");
+    LOG_ERRNO("stat");
     send_500(fd);
     return -1;
   }
-
+  size_t content_length = st.st_size;
   const char *mime = get_mime_type(path, path_len);
 
   // OK => 200
   char headers[128];
   long sz = snprintf(
       headers, sizeof(headers),
-      "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\nContent-Type: %s\r\n\r\n",
-      content_lenght, mime);
+      "HTTP/1.1 200 OK\r\nContent-Length: %zu\r\nContent-Type: %s\r\n\r\n",
+      content_length, mime);
   if (sz < 0 || sz >= (long)sizeof(headers)) {
     LOG_ERROR("snprintf header");
     send_500(fd);
-    free(content);
     return -1;
   }
 
   if (send_all(fd, headers, sz) == -1) {
     LOG_ERRNO("send header");
-    free(content);
-    return -1;
-  }
-  if (send_all(fd, content, content_lenght) == -1) {
-    LOG_ERRNO("send body");
-    free(content);
     return -1;
   }
 
-  free(content);
+  int content_fd = open(path, O_RDONLY);
+  if (content_fd == -1) {
+    LOG_ERRNO("open");
+    return -1;
+  }
+
+#ifdef __linux__
+  // TODO: sendfile in loop in Linux (in FreeBSD loop only for non-block I/O)
+  if (sendfile(fd, content_fd, NULL, content_length) == -1) {
+    if (errno == EAGAIN) {
+      LOG_INFO("client timeout (couldn't sendfile)");
+    } else {
+      LOG_ERRNO("sendfile");
+    }
+    close(content_fd);
+    return -1;
+  }
+#elif defined __FreeBSD__
+  if (sendfile(content_fd, fd, 0, content_length, NULL, NULL, 0) == -1) {
+    if (errno == EAGAIN) {
+      LOG_INFO("client timeout (couldn't sendfile)");
+    } else {
+      LOG_ERRNO("sendfile");
+    }
+    close(content_fd);
+    return -1;
+  }
+#endif
+  close(content_fd);
   return 0;
 }
