@@ -7,7 +7,8 @@ enum {
   NUM_THREADS = 6,
   MAXDATASIZE = 4096,
   TIMEOUT = 10,
-  BACKLOG = 10, // How many pending connections queue will hold
+  BACKLOG = 10,      // How many pending connections queue will hold
+  PATH_MAXLEN = 256, // Or may use `PATH_MAX` OS constant
 };
 
 typedef struct {

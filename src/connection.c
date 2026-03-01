@@ -225,16 +225,12 @@ int handle_http_request(int fd, const char *recv_buf) {
   }
 
   size_t path_len = ptr - recv_buf; // `\0` and `/` counts too
-  if (path_len == 0 || path_len > 128) {
+  if (path_len == 0 || path_len > PATH_MAXLEN) {
     send_400(fd); // path issue => 400
     return -1;
   }
   // +2 for dot at the begining ("./index.html") and \0 at the end
-  char *path = malloc(sizeof(char) * (path_len + 2)); // TODO: use stack
-  if (path == NULL) {
-    LOG_ERRNO("path malloc");
-    return -1;
-  }
+  char path[PATH_MAXLEN + 2];
   path[0] = '.';
   memcpy(path + 1, recv_buf, path_len);
   path[path_len + 1] = 0;
@@ -242,24 +238,13 @@ int handle_http_request(int fd, const char *recv_buf) {
   // request with `../../` in path => 403
   if (strstr(path, "..") != NULL) {
     send_403(fd);
-    free(path);
     return -1;
   }
   // response index.html for `GET /`
+  // path[0] is always '.'
   if (path_len == 1 && path[1] == '/') {
-    free(path); // no need in realloc (because of changing buffer)
-    path = malloc(13);
-    if (path == NULL) {
-      LOG_ERRNO("realloc");
-      return -1;
-    }
-    int a = 0;
-    if ((a = snprintf(path, 13, "./index.html")) != 12) {
-      LOG_ERROR("snprintf index.html: %d", a);
-      send_500(fd);
-      free(path);
-      return -1;
-    }
+    const char *index_file = "./index.html";
+    strcpy(path, index_file);
     path_len = 11;
   }
 
@@ -271,18 +256,15 @@ int handle_http_request(int fd, const char *recv_buf) {
   if (content_lenght < 0) {
     if (errno == ENOENT) { // file not found
       send_404(fd);
-      free(path);
       return -1;
     }
     // any other issue => 500
-    free(path);
     LOG_ERROR("failed to read content");
     send_500(fd);
     return -1;
   }
 
   const char *mime = get_mime_type(path, path_len);
-  free(path);
 
   // OK => 200
   char headers[128];
