@@ -129,7 +129,8 @@ static void server_loop(int server_fd, ThreadPool **thread_pool) {
       }
 
       task->client_fd = new_fd;
-      if (threadpool_push(*thread_pool, networktask_send_html, task) != 0) {
+      if (threadpool_push(*thread_pool, networktask_client_handler, task) !=
+          0) {
         LOG_ERROR("threadpool_push");
         close(new_fd);
         free(task);

@@ -75,7 +75,7 @@ static void send_500(int fd) {
   }
 }
 
-void networktask_send_html(void *arg) {
+void networktask_client_handler(void *arg) {
   NetworkTask *args = arg;
   int fd = args->client_fd;
 
