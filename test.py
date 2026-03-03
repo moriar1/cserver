@@ -18,7 +18,7 @@ assert res.status_code == 400, res.status_code
 
 # ../ (Path Traversal) => 403
 try:
-    res = requests.get("http://localhost:3490/\../", timeout=5)
+    res = requests.get(r"http://localhost:3490/\../", timeout=5)
 except requests.exceptions.ConnectionError:
     exit("Server is down")
 assert res.status_code == 403, res.status_code
