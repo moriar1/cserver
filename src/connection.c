@@ -212,14 +212,14 @@ int handle_http_request(int fd, const char *recv_buf) {
     send_500(fd);
     return -1;
   }
-  size_t content_length = st.st_size;
+  ssize_t content_length = st.st_size;
   const char *mime = get_mime_type(path, path_len);
 
   // OK => 200
   char headers[128];
   long sz = snprintf(
       headers, sizeof(headers),
-      "HTTP/1.1 200 OK\r\nContent-Length: %zu\r\nContent-Type: %s\r\n\r\n",
+      "HTTP/1.1 200 OK\r\nContent-Length: %zd\r\nContent-Type: %s\r\n\r\n",
       content_length, mime);
   if (sz < 0 || sz >= (long)sizeof(headers)) {
     LOG_ERROR("snprintf header");
@@ -227,10 +227,13 @@ int handle_http_request(int fd, const char *recv_buf) {
     return -1;
   }
 
+  // Sending headers
   if (send_all(fd, headers, sz) == -1) {
     LOG_ERRNO("send header");
     return -1;
   }
+
+  // Sending requested file
 
   int content_fd = open(path, O_RDONLY);
   if (content_fd == -1) {
@@ -239,17 +242,24 @@ int handle_http_request(int fd, const char *recv_buf) {
   }
 
 #ifdef __linux__
-  // TODO: sendfile in loop in Linux (in FreeBSD loop only for non-block I/O)
-  if (sendfile(fd, content_fd, NULL, content_length) == -1) {
-    if (errno == EAGAIN) {
-      LOG_INFO("client timeout (couldn't sendfile)");
-    } else {
-      LOG_ERRNO("sendfile");
+  ssize_t total_sent = 0;
+  ssize_t sent = 1;
+
+  while (sent > 0) {
+    if ((sent = sendfile(fd, content_fd, NULL, content_length - total_sent)) ==
+        -1) {
+      if (errno == EAGAIN) {
+        LOG_INFO("client timeout (couldn't sendfile)");
+      } else {
+        LOG_ERRNO("sendfile");
+      }
+      close(content_fd);
+      return -1;
     }
-    close(content_fd);
-    return -1;
+    total_sent += sent;
   }
 #elif defined __FreeBSD__
+  // NOTE: in FreeBSD loop is required only for non-block I/O
   if (sendfile(content_fd, fd, 0, content_length, NULL, NULL, 0) == -1) {
     if (errno == EAGAIN) {
       LOG_INFO("client timeout (couldn't sendfile)");
