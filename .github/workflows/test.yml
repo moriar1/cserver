@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Meson
-        run: meson setup builddir --fatal-meson-warnings
+        run: meson setup builddir -Db_sanitize=address,undefined --fatal-meson-warnings
 
       - name: Build
         run: meson compile -C builddir
@@ -35,4 +35,4 @@ jobs:
         run: python test.py
 
       - name: Shut down
-        run: killall cserver
+        run: killall -INT cserver
