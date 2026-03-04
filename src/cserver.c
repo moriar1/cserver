@@ -13,11 +13,9 @@
 
 #define PORT "3490"
 
-static volatile sig_atomic_t running = 1;
 static int pipe_fds[2];
 
 static void fatalsig(int __attribute__((unused)) signum) {
-  running = 0;
   write(pipe_fds[1], "f", 1); // interrupt `select()` waiting
 }
 
@@ -82,7 +80,7 @@ static int setup_server(void) {
 }
 
 static void server_loop(int server_fd, ThreadPool **thread_pool) {
-  while (running) {
+  while (1) {
     fd_set readset;
     FD_ZERO(&readset);
     FD_SET(pipe_fds[0], &readset);
@@ -97,9 +95,6 @@ static void server_loop(int server_fd, ThreadPool **thread_pool) {
     }
 
     if (FD_ISSET(pipe_fds[0], &readset)) {
-      // NOTE: In fact, this condition should not be triggered at all,
-      // because after select is being interupted by SIGINT, `running` sets to 0
-      // If use `while(1)` then this condition is triggred
       break;
     }
 
@@ -109,9 +104,6 @@ static void server_loop(int server_fd, ThreadPool **thread_pool) {
       int new_fd = accept(server_fd, (struct sockaddr *)&their_addr, &sin_size);
 
       if (new_fd == -1) {
-        if (running == 0) { // fatalsig() called
-          break;
-        }
         LOG_ERRNO("accept");
         continue;
       }
