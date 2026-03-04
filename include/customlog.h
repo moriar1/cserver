@@ -5,20 +5,31 @@
 #include <stdio.h>
 #include <stdlib.h> // abort()
 #include <string.h>
+#include <time.h>
 
 // Internal
 #define LOG_IMPL(level, fmt, ...)                                              \
   do {                                                                         \
-    fprintf(stderr, "[%s] %s:%d: " fmt "\n", level, __func__, __LINE__,        \
-            ##__VA_ARGS__);                                                    \
+    struct timespec ts;                                                        \
+    clock_gettime(CLOCK_REALTIME, &ts);                                        \
+    struct tm tm;                                                              \
+    localtime_r(&ts.tv_sec, &tm);                                              \
+    fprintf(stderr, "[%02d:%02d:%02d.%03ld] [%s] %s:%d: " fmt "\n",            \
+            tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, level,     \
+            __func__, __LINE__, ##__VA_ARGS__);                                \
   } while (0)
 #define LOG_ERRNO_IMPL(level, fmt, ...)                                        \
   do {                                                                         \
+    struct timespec ts;                                                        \
+    clock_gettime(CLOCK_REALTIME, &ts);                                        \
+    struct tm tm;                                                              \
+    localtime_r(&ts.tv_sec, &tm);                                              \
     const int saved_errno__ = errno;                                           \
     char my_buf__[128];                                                        \
     strerror_r(saved_errno__, my_buf__, sizeof my_buf__);                      \
-    fprintf(stderr, "[%s] %s:%d: " fmt ": %s\n", level, __func__, __LINE__,    \
-            ##__VA_ARGS__, my_buf__);                                          \
+    fprintf(stderr, "[%02d:%02d:%02d.%03ld] [%s] %s:%d: " fmt ": %s\n",        \
+            tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, level,     \
+            __func__, __LINE__, ##__VA_ARGS__, my_buf__);                      \
   } while (0)
 
 // Interface
@@ -29,17 +40,12 @@
 // NOTE: abort() in FATAL
 #define LOG_FATAL(fmt, ...)                                                    \
   do {                                                                         \
-    fprintf(stderr, "[FATAL] %s:%d: " fmt "\n", __func__, __LINE__,            \
-            ##__VA_ARGS__);                                                    \
+    LOG_IMPL("FATAL", fmt, ##__VA_ARGS__);                                     \
     abort();                                                                   \
   } while (0)
 #define LOG_FATAL_ERRNO(fmt, ...)                                              \
   do {                                                                         \
-    const int saved_errno__ = errno;                                           \
-    char my_buf__[128];                                                        \
-    strerror_r(saved_errno__, my_buf__, sizeof my_buf__);                      \
-    fprintf(stderr, "[FATAL] %s:%d: " fmt ": %s\n", __func__, __LINE__,        \
-            ##__VA_ARGS__, my_buf__);                                          \
+    LOG_ERRNO_IMPL("FATAL", fmt, ##__VA_ARGS__);                               \
     abort();                                                                   \
   } while (0)
 
