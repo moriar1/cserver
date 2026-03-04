@@ -6,7 +6,7 @@ Multi-threaded HTTP server using custom thread pool and BSD sockets.
 
 **Prerequisites**:
 
-- Unix-like OS (Linux, *BSD)
+- Unix-like OS (Linux, FreeBSD)
 - C Compiler (GCC or Clang)
 - [Meson](https://mesonbuild.com/SimpleStart.html)
 - Ninja (for Meson)
@@ -34,9 +34,10 @@ meson compile -C builddir
 ### Example output:
 
 ```text
-server: binding to ::
-server: waiting for connections...
-server: got connection from ::1
+[20:59:58.297] [INFO] setup_server:47: binding to ::
+[20:59:58.297] [INFO] main:156: waiting for connections...
+[21:00:09.466] [INFO] server_loop:111: got connection from ::1
+[21:00:09.468] [INFO] networktask_client_handler:135: closing connection...
 ```
 
 *Use Ctrl+C to stop.*
@@ -54,5 +55,25 @@ Run `cserver` then open one of those links in your web browser: `http://[::1]:34
 ```sh
 curl '[::1]:3490'
 curl '127.0.0.1:3490'
-# raw html output
+# raw HTML output
 ```
+
+## Features
+
+**General:**
+
+- Thread Pool pattern for handling concurrent connections
+- Basic HTTP/1.1 GET request handling
+
+**Security:**
+
+- Path traversal protection (`..` checks)
+- Header size limits (returns 431 if too large)
+- Socket timeouts to prevent hanging connections
+     
+## Limitations
+
+- No TLS/SSL: do not use for sensitive data
+- No URL-encoding: use latin, underscore `_`, hyphen `-` and period `.` symbols for file names
+- No kqueue/epoll: not suitable for high load scenarios
+- No DDoS protection
