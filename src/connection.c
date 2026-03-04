@@ -2,7 +2,6 @@
 #include "customlog.h"
 #include <fcntl.h>
 #include <netinet/in.h>
-#include <stddef.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>

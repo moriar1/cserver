@@ -19,7 +19,7 @@ hardening_flags = [
     '-fcf-protection=full',
     '-fstack-clash-protection',
     '-fstack-protector-strong',
-    # '-fstrict-flex-arrays=3',
+    ## Additional checks checks for libc usage:
     # '-U_FORTIFY_SOURCE',
     # '-D_FORTIFY_SOURCE=3',
 ]
@@ -44,27 +44,21 @@ warnings_flags = [
     '-Wno-variadic-macros',
 ]
 
-link_flags = [
-    '-Wl,-z,relro',
-    '-Wl,-z,now',
-    '-Wl,-z,noexecstack',
-    # '-Wl,-z,defs',
-    # '-Wl,--no-copy-dt-needed-entries',
-    # '-Wl,-z,nodlopen',
-]
+link_flags = ['-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack']
 
 buildtype = get_option('buildtype')
 build_type_flags = []
 build_type_link_flags = []
 
 if buildtype == 'debug'
-    build_type_flags += ['-DDEBUG', '-ftrapv']    # ,'-g3',  # '-fsanitize=float-divide-by-zero', # 'fno-omit-frame-pointer', #TODO: check with/without sans
+    build_type_flags += ['-DDEBUG', '-ftrapv']
 elif buildtype == 'debugoptimized'
-    build_type_flags += ['-ffunction-sections', '-fdata-sections']  #,'-g3', '-Og', '-march=native', '-mtune=native'
-    build_type_link_flags += ['-Wl,--gc-sections']    #'-flto'
+    build_type_flags += ['-ffunction-sections', '-fdata-sections']
+    build_type_link_flags += ['-Wl,--gc-sections']
 elif buildtype == 'release'
-    build_type_flags += ['-ffunction-sections', '-fdata-sections']  #, '-march=native', '-mtune=native', #, '-march=x86-64-v3'
-    build_type_link_flags += ['-Wl,--gc-sections']    #'-flto'
+    # May also use: '-march=native', '-mtune=native'
+    build_type_flags += ['-ffunction-sections', '-fdata-sections']
+    build_type_link_flags += ['-Wl,--gc-sections']
 endif
 
 # ---- Compiler Specific Flags ----
@@ -89,7 +83,7 @@ if cc_id == 'clang'
         '-Wno-conditional-uninitialized',
         '-Wno-covered-switch-default',
         '-Wno-disabled-macro-expansion',
-        '-Wno-pre-c11-compat'
+        '-Wno-pre-c11-compat',
     ]
     if buildtype == 'release'
         build_type_flags += ['-mretpoline']

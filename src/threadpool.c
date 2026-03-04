@@ -141,8 +141,6 @@ int threadpool_push(ThreadPool *pool, void (*func)(void *), void *arg) {
     pool->tail->next = new_node; // not empty queue
     pool->tail = new_node;
   }
-  LOG_DEBUG("Task pushed. tasks_count: %zu, working_threads_count: %zu",
-            pool->tasks_count, pool->working_threads_count);
   pthread_cond_signal(&pool->cond_task_available);
   pthread_mutex_unlock(&pool->mutex);
   return 0;
@@ -188,8 +186,6 @@ void *threadpool_thread_run(void *arg) {
     Task *task;
     threadpool_pop(pool, &task);
     pool->working_threads_count++;
-    LOG_DEBUG("Starting Task. tasks_count: %zu, working_threads_count: %zu",
-              pool->tasks_count, pool->working_threads_count);
     pthread_mutex_unlock(&pool->mutex);
 
     // Execute task
@@ -209,8 +205,6 @@ void *threadpool_thread_run(void *arg) {
   return (void *)0;
 }
 
-// NOTE: may implement wait_idle which do not uses pool->shutdown, but waits
-// untill all tasks are finishes
 void threadpool_wait(ThreadPool *pool) {
   if (pool == NULL) {
     LOG_DEBUG("pool is NULL, can't wait");
